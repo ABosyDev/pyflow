@@ -1,7 +1,7 @@
-# PyFlow — laboratorium 1
+# PyFlow — laboratoria 1 i 2
 
-Biblioteka opisuje zadania, sprawdza zależności i tworzy plan wykonania.
-Na tym etapie nie uruchamia funkcji zadań.
+Biblioteka opisuje zadania, sprawdza zależności i synchronicznie wykonuje
+workflow w kolejności topologicznej.
 
 ## Instalacja (PowerShell, Python 3.11+)
 
@@ -17,22 +17,53 @@ uruchomić poleceniem `python -m pytest`.
 ## Przykład
 
 ```python
-from pyflow import Task, Workflow, execution_layers
+from pyflow import Task, Workflow, execution_layers, format_report, run
 
 def pobierz(inputs, params):
     return [1, 2, 3]
 
 def zsumuj(inputs, params):
-    return sum(inputs["pobierz"])
+    return sum(inputs["pobierz"]) * params["mnoznik"]
 
 workflow = Workflow()
 workflow.add_task(Task("pobierz", pobierz))
-workflow.add_task(Task("zsumuj", zsumuj, frozenset({"pobierz"})))
-workflow.validate()
+workflow.add_task(Task("zsumuj", zsumuj, frozenset({"pobierz"}), {"mnoznik": 2}))
 print(execution_layers(workflow))  # [['pobierz'], ['zsumuj']]
+result = run(workflow)
+print(result.outputs["zsumuj"])  # 12
+print(format_report(result))
 ```
 
-Na razie tworzymy tylko plan. Funkcje zadań nie są uruchamiane.
+## Wykonanie i statusy
+
+Silnik najpierw sprawdza cały graf. Następnie wywołuje synchroniczne funkcje
+`function(inputs, params)`. Słownik `inputs` zawiera wyniki bezpośrednich
+zależności. Zadanie bez zależności dostaje pusty słownik. `params` zawiera
+konfigurację zapisaną w `Task`.
+
+`RunResult.outputs` przechowuje wartości zwrócone przez zakończone poprawnie
+zadania, w tym `None`. Każdy wpis w `RunResult.task_states` ma status
+`SUCCEEDED`, `FAILED` albo `SKIPPED`. Dla uruchomionych zadań zapisujemy
+początek, koniec i udostępniamy czas trwania w sekundach. Tak samo mierzymy cały
+przebieg. `format_report(result)` zwraca raport z czasami, a przy pominiętych
+zadaniach wyświetla kreskę. Pusty workflow zwraca pusty wynik z `succeeded=True`.
+
+Po awarii silnik zapisuje oryginalny wyjątek w `task_states[nazwa].error`,
+pomija zależne zadania i kończy pozostałe gałęzie. Potem zgłasza
+`TaskExecutionError`. Pole `task_name` wskazuje pierwsze zadanie, które
+zawiodło, `__cause__` zawiera jego oryginalny wyjątek, a `result` zawiera
+raport całego przebiegu z `succeeded=False`.
+
+## Przykład CSV → JSON
+
+Po instalacji uruchom poniższe polecenie z katalogu repozytorium.
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.csv_report
+```
+
+Przykład czyta `examples/sales.csv`, normalizuje nazwy produktów, sumuje ilości
+i wypisuje JSON na stdout. Raport czasów trafia na stderr.
 
 ## Algorytm
 
