@@ -15,6 +15,8 @@ class Task:
     dependencies: frozenset[str] = field(default_factory=frozenset)
     params: Mapping[str, Any] = field(default_factory=dict)
     description: str = ""
+    retries: int = 0
+    timeout: float | None = None
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -23,6 +25,13 @@ class Task:
             raise WorkflowValidationE(f"Zadanie {self.name!r} zależy od siebie.")
         if not callable(self.function):
             raise WorkflowValidationE("Funkcja zadania musi być wywoływalna.")
+        if type(self.retries) is not int or self.retries < 0:
+            raise WorkflowValidationE("Liczba ponowień musi być nieujemną liczbą całkowitą.")
+        if self.timeout is not None and (
+            type(self.timeout) not in (int, float)
+            or not 0 < self.timeout < float("inf")
+        ):
+            raise WorkflowValidationE("Timeout musi być dodatnią, skończoną liczbą sekund.")
         object.__setattr__(self, "dependencies", frozenset(self.dependencies))
         object.__setattr__(self, "params", deepcopy(dict(self.params)))
 

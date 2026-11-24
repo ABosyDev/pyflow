@@ -74,3 +74,50 @@ Jeśli część zadań pozostanie zablokowana, zgłaszamy błąd cyklu.
 
 Dla V zadań i E zależności czas wynosi O(V + E + V log V),
 bo dodatkowo sortujemy nazwy. Pamięć wynosi O(V + E).
+
+## Lab 3 — współbieżność, retry i timeout
+
+`async_run` uruchamia zadania z tej samej warstwy współbieżnie. Domyślnie
+wykonuje do czterech zadań naraz. Następna warstwa rusza po zakończeniu
+poprzedniej. Zadanie otrzymuje wyniki swoich bezpośrednich zależności.
+
+```python
+import asyncio
+
+from pyflow import Task, Workflow, async_run, format_report
+
+
+def pobierz(inputs, params):
+    return [1, 2, 3]
+
+
+async def podsumuj(inputs, params):
+    return sum(inputs["pobierz"])
+
+
+workflow = Workflow()
+workflow.add_task(Task("pobierz", pobierz, retries=1, timeout=2))
+workflow.add_task(Task("podsumuj", podsumuj, frozenset({"pobierz"})))
+
+result = asyncio.run(async_run(workflow, max_concurrency=2))
+print(result.outputs["podsumuj"])  # 6
+print(format_report(result))
+```
+
+Funkcje `async def` działają w pętli zdarzeń, a funkcje synchroniczne
+w osobnym wątku. Jeśli synchroniczny dekorator zwraca korutynę, silnik
+wywołuje dekorator w wątku, a korutynę wykonuje w pętli zdarzeń.
+
+`retries=1` daje maksymalnie dwie próby, a `timeout=2` ustawia limit
+dwóch sekund na każdą z nich. Po timeoutcie kod synchroniczny może
+jeszcze działać w wątku. Silnik odrzuca jego wynik i czeka na koniec
+wątku przed ponowieniem lub zwolnieniem miejsca dla kolejnego zadania.
+
+Przerwa przed pierwszym ponowieniem wynosi domyślnie 0,1 s i podwaja się
+przy kolejnych. `retry_backoff="constant"` utrzymuje stałą przerwę,
+a `base_delay=0` pozwala wykonać test bez czekania na backoff.
+
+Po wyczerpaniu prób raport pokazuje końcowy błąd i liczbę prób.
+Zależne zadania dostają status `SKIPPED`, a niezależne mogą się
+zakończyć. Pełny wynik nieudanego przebiegu jest w `TaskExecutionError.result`.
+Anulowanie przebiegu propaguje `CancelledError` bez ponawiania zadań.
